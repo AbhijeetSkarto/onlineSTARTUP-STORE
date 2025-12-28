@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { generateAIText, generateImage, searchGrounding, generateSpeech } from '../services/gemini';
 import { db } from '../services/storage';
 
@@ -14,24 +14,41 @@ function decodeBase64(base64: string) {
   return bytes;
 }
 
-// Helper to decode raw PCM audio data
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
+// Helper to create a WAV header for mono PCM 16-bit
+function createWavHeader(pcmLength: number, sampleRate: number): Uint8Array {
+  const header = new Uint8Array(44);
+  const view = new DataView(header.buffer);
+  
+  // RIFF identifier
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  // file length
+  view.setUint32(4, 36 + pcmLength, true);
+  // RIFF type
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  
+  // format chunk identifier
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  // format chunk length
+  view.setUint32(16, 16, true);
+  // sample format (PCM)
+  view.setUint16(20, 1, true);
+  // channel count
+  view.setUint16(22, 1, true);
+  // sample rate
+  view.setUint32(24, sampleRate, true);
+  // byte rate (sample rate * block align)
+  view.setUint32(28, sampleRate * 2, true);
+  // block align (channel count * bytes per sample)
+  view.setUint16(32, 2, true);
+  // bits per sample
+  view.setUint16(34, 16, true);
+  
+  // data chunk identifier
+  view.setUint32(36, 0x64617461, false); // "data"
+  // data chunk length
+  view.setUint32(40, pcmLength, true);
+  
+  return header;
 }
 
 const DemoCard: React.FC<{ title: string; children: React.ReactNode; icon: string }> = ({ title, children, icon }) => (
@@ -61,8 +78,14 @@ export const InteractiveDemos: React.FC = () => {
 
   const [speechText, setSpeechText] = useState('');
   const [isSpeechLoading, setIsSpeechLoading] = useState(false);
-  const [audioReady, setAudioReady] = useState(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  // Cleanup audio URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
 
   const handleChat = async () => {
     if (!chatInput) return;
@@ -109,23 +132,18 @@ export const InteractiveDemos: React.FC = () => {
   const handleSpeech = async () => {
     if (!speechText) return;
     setIsSpeechLoading(true);
-    setAudioReady(false);
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl(null);
+
     try {
       const base64Audio = await generateSpeech(speechText);
       if (base64Audio) {
-        if (!audioContextRef.current) {
-          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        }
-        const ctx = audioContextRef.current;
-        const audioData = decodeBase64(base64Audio);
-        const audioBuffer = await decodeAudioData(audioData, ctx, 24000, 1);
-        
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.start();
-        setAudioReady(true);
-        db.saveRecord({ type: 'voice', input: speechText, output: '[Audio PCM Generated]' });
+        const pcmData = decodeBase64(base64Audio);
+        const header = createWavHeader(pcmData.length, 24000);
+        const wavBlob = new Blob([header, pcmData], { type: 'audio/wav' });
+        const url = URL.createObjectURL(wavBlob);
+        setAudioUrl(url);
+        db.saveRecord({ type: 'voice', input: speechText, output: '[Audio WAV Generated]' });
       }
     } catch (e) {
       console.error("Speech generation error:", e);
@@ -238,7 +256,7 @@ export const InteractiveDemos: React.FC = () => {
           <div className="space-y-3">
             <textarea 
               className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="e.g., Welcome to our premium resort. We hope you enjoy your stay!"
+              placeholder="Enter text to speak..."
               rows={3}
               value={speechText}
               onChange={(e) => setSpeechText(e.target.value)}
@@ -253,18 +271,10 @@ export const InteractiveDemos: React.FC = () => {
                   <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                   Processing...
                 </>
-              ) : "Speak Text"}
+              ) : "Generate Speech"}
             </button>
-            {audioReady && (
-              <div className="flex items-center gap-2 bg-slate-900 p-3 rounded-lg border border-indigo-500/30">
-                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping"></div>
-                <span className="text-xs text-slate-300">Playing generated audio...</span>
-              </div>
-            )}
-            <p className="text-[10px] text-slate-500 text-center">Uses high-fidelity PCM streaming</p>
-          </div>
-        </DemoCard>
-      </div>
-    </section>
-  );
-};
+            {audioUrl && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                <audio controls src={audioUrl} className="w-full h-10 rounded-lg overflow-hidden" />
+                <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-lg border border-indigo-500/30">
+                  <div className="w-1.5 h-1.5 bg
