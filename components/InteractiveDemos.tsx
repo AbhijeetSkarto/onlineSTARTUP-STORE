@@ -1,280 +1,231 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { generateAIText, generateImage, searchGrounding, generateSpeech } from '../services/gemini';
-import { db } from '../services/storage';
+import React, { useState, useEffect } from 'react';
+import { 
+  generateAIText, 
+  generateImagePro, 
+  searchGrounding, 
+  generateSpeech, 
+  generateVideoVeo,
+  editImage
+} from '../services/gemini';
 
-// Helper to decode base64 to Uint8Array
+interface InteractiveDemosProps {
+  initialView?: 'chat' | 'image' | 'voice' | 'search' | 'video' | 'edit' | 'live';
+}
+
 function decodeBase64(base64: string) {
   const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
   return bytes;
 }
 
-// Helper to create a WAV header for mono PCM 16-bit
 function createWavHeader(pcmLength: number, sampleRate: number): Uint8Array {
   const header = new Uint8Array(44);
   const view = new DataView(header.buffer);
-  
-  // RIFF identifier
-  view.setUint32(0, 0x52494646, false); // "RIFF"
-  // file length
-  view.setUint32(4, 36 + pcmLength, true);
-  // RIFF type
-  view.setUint32(8, 0x57415645, false); // "WAVE"
-  
-  // format chunk identifier
-  view.setUint32(12, 0x666d7420, false); // "fmt "
-  // format chunk length
-  view.setUint32(16, 16, true);
-  // sample format (PCM)
-  view.setUint16(20, 1, true);
-  // channel count
-  view.setUint16(22, 1, true);
-  // sample rate
-  view.setUint32(24, sampleRate, true);
-  // byte rate (sample rate * block align)
-  view.setUint32(28, sampleRate * 2, true);
-  // block align (channel count * bytes per sample)
-  view.setUint16(32, 2, true);
-  // bits per sample
-  view.setUint16(34, 16, true);
-  
-  // data chunk identifier
-  view.setUint32(36, 0x64617461, false); // "data"
-  // data chunk length
-  view.setUint32(40, pcmLength, true);
-  
+  view.setUint32(0, 0x52494646, false); view.setUint32(4, 36 + pcmLength, true); view.setUint32(8, 0x57415645, false);
+  view.setUint32(12, 0x666d7420, false); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  view.setUint32(36, 0x64617461, false); view.setUint32(40, pcmLength, true);
   return header;
 }
 
-const DemoCard: React.FC<{ title: string; children: React.ReactNode; icon: string }> = ({ title, children, icon }) => (
-  <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex flex-col gap-4 h-full">
-    <div className="flex items-center gap-2">
-      <span className="text-2xl">{icon}</span>
-      <h3 className="font-bold text-lg">{title}</h3>
-    </div>
-    <div className="flex-1 flex flex-col gap-4">
-      {children}
-    </div>
-  </div>
-);
-
-export const InteractiveDemos: React.FC = () => {
-  const [chatInput, setChatInput] = useState('');
-  const [chatResult, setChatResult] = useState('');
-  const [isChatLoading, setIsChatLoading] = useState(false);
-
-  const [imagePrompt, setImagePrompt] = useState('');
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isImageLoading, setIsImageLoading] = useState(false);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResult, setSearchResult] = useState<{text: string, sources: any[]} | null>(null);
-  const [isSearchLoading, setIsSearchLoading] = useState(false);
-
-  const [speechText, setSpeechText] = useState('');
-  const [isSpeechLoading, setIsSpeechLoading] = useState(false);
+export const InteractiveDemos: React.FC<InteractiveDemosProps> = ({ initialView = 'chat' }) => {
+  const [activeTab, setActiveTab] = useState(initialView);
+  const [input, setInput] = useState('');
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<'1:1' | '16:9' | '9:16'>('1:1');
+  const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>('1K');
+  const [useThinking, setUseThinking] = useState(false);
 
-  // Cleanup audio URLs to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-    };
-  }, [audioUrl]);
-
-  const handleChat = async () => {
-    if (!chatInput) return;
-    setIsChatLoading(true);
-    try {
-      const res = await generateAIText(chatInput);
-      setChatResult(res || '');
-      db.saveRecord({ type: 'chat', input: chatInput, output: res || '' });
-    } catch (e) {
-      setChatResult("Error generating response. Please try again.");
-    } finally {
-      setIsChatLoading(false);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setUploadedImage(reader.result as string);
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleImage = async () => {
-    if (!imagePrompt) return;
-    setIsImageLoading(true);
-    try {
-      const res = await generateImage(imagePrompt);
-      setImageUrl(res);
-      if (res) db.saveRecord({ type: 'image', input: imagePrompt, output: '[Image Data Generated]' });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsImageLoading(false);
-    }
-  };
-
-  const handleSearch = async () => {
-    if (!searchQuery) return;
-    setIsSearchLoading(true);
-    try {
-      const res = await searchGrounding(searchQuery);
-      setSearchResult(res);
-      db.saveRecord({ type: 'search', input: searchQuery, output: res.text });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsSearchLoading(false);
-    }
-  };
-
-  const handleSpeech = async () => {
-    if (!speechText) return;
-    setIsSpeechLoading(true);
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioUrl(null);
+  const executeAction = async () => {
+    if (!input && activeTab !== 'live') return;
+    setLoading(true);
+    setResult(null);
 
     try {
-      const base64Audio = await generateSpeech(speechText);
-      if (base64Audio) {
-        const pcmData = decodeBase64(base64Audio);
-        const header = createWavHeader(pcmData.length, 24000);
-        const wavBlob = new Blob([header, pcmData], { type: 'audio/wav' });
-        const url = URL.createObjectURL(wavBlob);
-        setAudioUrl(url);
-        db.saveRecord({ type: 'voice', input: speechText, output: '[Audio WAV Generated]' });
+      if (activeTab === 'chat') {
+        setLoadingMsg('Pro: Logical Reasoning in progress...');
+        const res = await generateAIText(input, true, useThinking);
+        setResult(res);
+      } else if (activeTab === 'image') {
+        setLoadingMsg(`Pro Image: Synthesizing ${imageSize} Visual...`);
+        const res = await generateImagePro(input, aspectRatio, imageSize);
+        setResult(res);
+      } else if (activeTab === 'video') {
+        setLoadingMsg('Veo 3.1: Rendering cinematic sequence...');
+        const res = await generateVideoVeo(input, aspectRatio === '9:16' ? '9:16' : '16:9', uploadedImage?.split(',')[1]);
+        setResult(res);
+      } else if (activeTab === 'edit') {
+        if (!uploadedImage) throw new Error("Reference required.");
+        setLoadingMsg('Nano Banana: Regenerating Image...');
+        const res = await editImage(uploadedImage.split(',')[1], input);
+        setResult(res);
+      } else if (activeTab === 'search') {
+        setLoadingMsg('Search Grounding: Polling sources...');
+        const res = await searchGrounding(input);
+        setResult(res);
+      } else if (activeTab === 'voice') {
+        setLoadingMsg('TTS: Cloning voice profile...');
+        const base64 = await generateSpeech(input);
+        if (base64) {
+          const pcm = decodeBase64(base64);
+          const header = createWavHeader(pcm.length, 24000);
+          const url = URL.createObjectURL(new Blob([header, pcm], { type: 'audio/wav' }));
+          setAudioUrl(url);
+          setResult('Generated');
+        }
       }
     } catch (e) {
-      console.error("Speech generation error:", e);
+      setResult("Engine failure. Please refine prompt parameters.");
     } finally {
-      setIsSpeechLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <section className="py-20 px-6 max-w-7xl mx-auto">
-      <div className="text-center mb-16">
-        <h2 className="text-4xl font-bold mb-4">Experience the Power of Your White-Label Suite</h2>
-        <p className="text-slate-400 max-w-2xl mx-auto text-lg">
-          These tools come pre-built in your dashboard. Customize them with your logo and sell them to clients instantly.
-        </p>
+    <div className="bg-slate-50 border border-slate-200 rounded-[32px] overflow-hidden luxury-shadow">
+      <div className="flex border-b border-slate-200 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'chat', icon: '💬', label: 'Pro' },
+          { id: 'image', icon: '🎨', label: 'Pro Image' },
+          { id: 'video', icon: '🎬', label: 'Veo' },
+          { id: 'edit', icon: '🪄', label: 'Edit' },
+          { id: 'search', icon: '🌐', label: 'Search' },
+          { id: 'voice', icon: '🎙️', label: 'Speech' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => { setActiveTab(tab.id as any); setResult(null); setInput(''); }}
+            className={`flex-1 flex items-center justify-center gap-2 py-5 px-6 text-[10px] font-black uppercase tracking-widest transition-all min-w-[120px] ${
+              activeTab === tab.id ? 'bg-white text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        ))}
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Chatbot Demo */}
-        <DemoCard title="Smart AI Chatbot" icon="💬">
-          <p className="text-sm text-slate-400">Ask anything. This is what your clients get.</p>
-          <div className="space-y-3">
-            <textarea 
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="e.g., Write a 30-day marketing plan for a gym."
-              rows={3}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-            />
-            <button 
-              onClick={handleChat}
-              disabled={isChatLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 py-2 rounded-lg font-semibold text-sm transition disabled:opacity-50"
-            >
-              {isChatLoading ? "Thinking..." : "Generate Demo Response"}
-            </button>
-            {chatResult && (
-              <div className="bg-slate-900 p-3 rounded-lg text-xs text-slate-300 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                {chatResult}
-              </div>
-            )}
+      <div className="p-10 space-y-8 bg-white">
+        {(activeTab === 'video' || activeTab === 'edit') && (
+          <div className="space-y-4">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reference Asset</p>
+            <div className="flex items-center gap-6">
+              <input type="file" onChange={handleImageUpload} className="hidden" id="asset-up" />
+              <label htmlFor="asset-up" className="cursor-pointer px-6 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-slate-100 transition-all">
+                {uploadedImage ? 'Replace Image' : 'Select Source'}
+              </label>
+              {uploadedImage && <img src={uploadedImage} className="w-16 h-16 object-cover rounded-xl border border-slate-100 luxury-shadow" />}
+            </div>
           </div>
-        </DemoCard>
+        )}
 
-        {/* Image Generation Demo */}
-        <DemoCard title="AI Image Studio" icon="🎨">
-          <p className="text-sm text-slate-400">Let clients generate marketing assets in seconds.</p>
-          <div className="space-y-3">
-            <input 
-              type="text"
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="e.g., A luxury villa in Goa at sunset"
-              value={imagePrompt}
-              onChange={(e) => setImagePrompt(e.target.value)}
-            />
-            <button 
-              onClick={handleImage}
-              disabled={isImageLoading}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded-lg font-semibold text-sm transition disabled:opacity-50"
-            >
-              {isImageLoading ? "Generating..." : "Generate Image"}
-            </button>
-            {imageUrl && (
-              <div className="relative aspect-square w-full rounded-lg overflow-hidden border border-slate-700">
-                <img src={imageUrl} alt="AI Generated" className="object-cover w-full h-full" />
+        {activeTab === 'image' && (
+          <div className="grid sm:grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Target Resolution</p>
+              <div className="flex gap-2">
+                {(['1K', '2K', '4K'] as const).map(s => (
+                  <button key={s} onClick={() => setImageSize(s)} className={`px-5 py-2 rounded-lg text-[10px] font-bold border transition-all ${imageSize === s ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{s}</button>
+                ))}
               </div>
-            )}
+            </div>
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Aspect Ratio</p>
+              <div className="flex gap-2">
+                {(['1:1', '16:9', '9:16'] as const).map(r => (
+                  <button key={r} onClick={() => setAspectRatio(r as any)} className={`px-5 py-2 rounded-lg text-[10px] font-bold border transition-all ${aspectRatio === r ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{r}</button>
+                ))}
+              </div>
+            </div>
           </div>
-        </DemoCard>
+        )}
 
-        {/* Real-time Search Grounding */}
-        <DemoCard title="Global AI Search" icon="🌐">
-          <p className="text-sm text-slate-400">Up-to-the-minute info with Google Search Grounding.</p>
-          <div className="space-y-3">
-            <input 
-              type="text"
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="e.g., Current USD to INR rate"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <button 
-              onClick={handleSearch}
-              disabled={isSearchLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 py-2 rounded-lg font-semibold text-sm transition disabled:opacity-50"
-            >
-              {isSearchLoading ? "Searching..." : "Get Live Data"}
-            </button>
-            {searchResult && (
-              <div className="bg-slate-900 p-3 rounded-lg text-xs text-slate-300 space-y-2">
-                <p>{searchResult.text}</p>
-                {searchResult.sources.length > 0 && (
-                  <div className="pt-2 border-t border-slate-700">
-                    <p className="font-bold text-[10px] uppercase text-slate-500 mb-1">Sources:</p>
-                    {searchResult.sources.map((s, i) => (
-                      <a key={i} href={s.uri} target="_blank" rel="noopener noreferrer" className="block text-indigo-400 hover:underline truncate">
-                        {s.title || s.uri}
-                      </a>
-                    ))}
+        {activeTab === 'chat' && (
+          <div className="flex items-center gap-3">
+            <input type="checkbox" id="think" checked={useThinking} onChange={(e) => setUseThinking(e.target.checked)} className="w-4 h-4 accent-slate-900 rounded cursor-pointer" />
+            <label htmlFor="think" className="text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-slate-900 transition-all">Enable CoT Reasoning (Thinking Mode)</label>
+          </div>
+        )}
+
+        <div className="relative group">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={`Enter system instructions or ${activeTab} description...`}
+            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-6 text-sm text-slate-900 outline-none focus:bg-white focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 min-h-[160px] resize-none transition-all placeholder:text-slate-300 font-medium"
+          />
+          <button
+            onClick={executeAction}
+            disabled={loading || (!input && activeTab !== 'live')}
+            className="absolute bottom-6 right-6 px-10 py-4 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30"
+          >
+            {loading ? 'Processing...' : 'Run Prototype'}
+          </button>
+        </div>
+
+        {loading && (
+          <div className="text-center py-4 space-y-4">
+            <div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 animate-pulse">{loadingMsg}</p>
+          </div>
+        )}
+
+        {result && (
+          <div className="animate-in fade-in zoom-in duration-500 pt-8 border-t border-slate-100">
+            {activeTab === 'chat' || activeTab === 'search' ? (
+              <div className="bg-slate-50 p-8 rounded-2xl border border-slate-100 text-sm text-slate-600 leading-relaxed font-normal whitespace-pre-wrap">
+                {typeof result === 'string' ? result : result.text}
+                {result.sources && (
+                  <div className="mt-6 pt-6 border-t border-slate-200">
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-3">Verified Sources</p>
+                    <div className="flex flex-wrap gap-2">
+                      {result.sources.map((s: any, i: number) => (
+                        <a key={i} href={s.uri} target="_blank" className="text-[9px] font-bold px-3 py-1 bg-white border border-slate-200 rounded-md hover:bg-slate-900 hover:text-white transition-all">{s.title || 'Source'}</a>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
-            )}
+            ) : (activeTab === 'image' || activeTab === 'edit') ? (
+              <div className="luxury-shadow rounded-2xl overflow-hidden border border-slate-100">
+                <img src={result} className="w-full h-auto" />
+              </div>
+            ) : activeTab === 'video' ? (
+              <div className="luxury-shadow rounded-2xl overflow-hidden border border-slate-100 bg-black">
+                <video src={result} controls autoPlay className="w-full h-auto aspect-video" />
+              </div>
+            ) : activeTab === 'voice' ? (
+              <div className="flex items-center gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                <span className="text-xl">🎙️</span>
+                <audio src={audioUrl!} controls className="flex-1 h-10" />
+              </div>
+            ) : null}
           </div>
-        </DemoCard>
-
-        {/* Voice AI Demo */}
-        <DemoCard title="Voice AI (TTS)" icon="🎙️">
-          <p className="text-sm text-slate-400">Convert marketing copy into human-like audio.</p>
-          <div className="space-y-3">
-            <textarea 
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="Enter text to speak..."
-              rows={3}
-              value={speechText}
-              onChange={(e) => setSpeechText(e.target.value)}
-            />
-            <button 
-              onClick={handleSpeech}
-              disabled={isSpeechLoading}
-              className="w-full bg-purple-600 hover:bg-purple-700 py-2 rounded-lg font-semibold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSpeechLoading ? (
-                <>
-                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                  Processing...
-                </>
-              ) : "Generate Speech"}
-            </button>
-            {audioUrl && (
-              <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                <audio controls src={audioUrl} className="w-full h-10 rounded-lg overflow-hidden" />
-                <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-lg border border-indigo-500/30">
-                  <div className="w-1.5 h-1.5 bg
+        )}
+      </div>
+      
+      <div className="bg-slate-50 px-10 py-5 flex justify-between items-center border-t border-slate-200">
+        <span className="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">Environment: Inventional Lab v3.0</span>
+        <div className="flex gap-2 items-center">
+          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+          <span className="text-[8px] font-black uppercase tracking-[0.3em] text-slate-900">Stable Node Connected</span>
+        </div>
+      </div>
+    </div>
+  );
+};

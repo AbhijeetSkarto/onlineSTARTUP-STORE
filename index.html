@@ -4,18 +4,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhiteLabelStartup.store – Launch AI SaaS Brand 24hrs</title>
-    <meta name="description" content="White-label chatbot + CRM/automation. Launch YOUR Branded AI SaaS in 24 Hours. No coding needed.">
+    <title>ONLINE STARTUP STORE – Premium AI & Business Solutions</title>
+    <meta name="description" content="The world's most exclusive white-label AI SaaS suite. Launch your legacy in 48 hours.">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #020617;
+            --accent: #c5a059;
+            --surface: #ffffff;
+            --background: #f8fafc;
+            --border: #e2e8f0;
+        }
         body {
             font-family: 'Inter', sans-serif;
-            scroll-behavior: smooth;
+            background-color: var(--background);
+            color: var(--primary);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
         }
-        .bg-dark-gradient {
-            background: radial-gradient(circle at top right, #312e81 0%, #0f172a 100%);
+        .container-custom {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
         }
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .text-gradient {
+            background: linear-gradient(135deg, #020617 0%, #334155 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .luxury-shadow {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+        }
+        .luxury-shadow-hover:hover {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes subtle-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .float { animation: subtle-float 6s ease-in-out infinite; }
     </style>
 <script type="importmap">
 {
@@ -28,7 +64,7 @@
 }
 </script>
 </head>
-<body class="bg-[#0f172a] text-slate-100">
+<body class="selection:bg-slate-200">
     <div id="root"></div>
 </body>
 </html>

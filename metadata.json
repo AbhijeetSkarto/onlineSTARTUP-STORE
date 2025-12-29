@@ -1,8 +1,8 @@
 {
-  "name": "WhiteLabelStartup.store - AI SaaS Suite",
-  "description": "A high-converting white-label AI SaaS landing page with interactive demos for chatbots, image generation, and voice AI.",
   "requestFramePermissions": [
     "camera",
     "microphone"
-  ]
+  ],
+  "name": "",
+  "description": ""
 }

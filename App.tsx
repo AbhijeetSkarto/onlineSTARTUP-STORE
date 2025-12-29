@@ -1,512 +1,361 @@
 
-import React, { useState, useEffect } from 'react';
-import { TESTIMONIALS, FAQS, COLORS } from './constants';
-import { PricingTier } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { PRODUCTS } from './constants';
+import { Product, Category } from './types';
 import { InteractiveDemos } from './components/InteractiveDemos';
-import { db, DBRecord } from './services/storage';
+import { db } from './services/storage';
 
 const App: React.FC = () => {
-  const [timeLeft, setTimeLeft] = useState({ hours: 47, minutes: 59, seconds: 59 });
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('analytics');
-  const [records, setRecords] = useState<DBRecord[]>([]);
+  const [view, setView] = useState<'store' | 'product'>('store');
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
+  const [showCart, setShowCart] = useState(false);
+  const [cartIds, setCartIds] = useState<string[]>(db.getCart());
+  const [timeLeft, setTimeLeft] = useState(28400); 
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        let { hours, minutes, seconds } = prev;
-        if (seconds > 0) seconds--;
-        else if (minutes > 0) { seconds = 59; minutes--; }
-        else if (hours > 0) { minutes = 59; hours--; }
-        return { hours, minutes, seconds };
-      });
-    }, 1000);
+    const timer = setInterval(() => setTimeLeft(p => p > 0 ? p - 1 : 0), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (isLoggedIn) {
-      setRecords(db.getRecords());
-    }
-  }, [isLoggedIn, activeTab]);
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowLoginModal(false);
-    setIsLoggedIn(true);
-    window.scrollTo(0, 0);
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${h}h ${m}m ${sec}s`;
   };
 
-  const handleDeleteRecord = (id: string) => {
-    db.deleteRecord(id);
-    setRecords(db.getRecords());
+  const filteredProducts = useMemo(() => {
+    if (activeCategory === 'All') return PRODUCTS;
+    return PRODUCTS.filter(p => p.category === activeCategory);
+  }, [activeCategory]);
+
+  const cartItems = useMemo(() => PRODUCTS.filter(p => cartIds.includes(p.id)), [cartIds]);
+  const cartTotal = useMemo(() => cartItems.reduce((acc, curr) => acc + curr.price, 0), [cartItems]);
+
+  const addToCart = (productId: string) => {
+    db.addToCart(productId);
+    setCartIds(db.getCart());
+    setShowCart(true);
   };
 
-  const Dashboard = () => (
-    <div className="min-h-screen bg-[#0f172a] flex text-slate-200">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col hidden md:flex">
-        <div className="p-6">
-          <div className="text-xl font-black text-indigo-400">WLS<span className="text-white">.STORE</span></div>
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Partner Portal</p>
+  const removeFromCart = (productId: string) => {
+    db.removeFromCart(productId);
+    setCartIds(db.getCart());
+  };
+
+  const Nav = () => (
+    <nav className="fixed top-0 left-0 right-0 z-[100] glass border-b border-slate-200/50">
+      <div className="container-custom py-5 flex justify-between items-center">
+        <div 
+          onClick={() => setView('store')} 
+          className="text-lg font-black tracking-tighter cursor-pointer flex items-center gap-2"
+        >
+          <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-xs">O</div>
+          <span className="uppercase tracking-[0.1em]">Online Startup <span className="text-slate-400">Store</span></span>
         </div>
-        <nav className="flex-1 px-4 space-y-2 mt-4">
-          {[
-            { id: 'analytics', label: 'Analytics', icon: '📊' },
-            { id: 'database', label: 'Database', icon: '💾' },
-            { id: 'agents', label: 'AI Agents', icon: '🤖' },
-            { id: 'settings', label: 'White-Labeling', icon: '⚙️' },
-            { id: 'billing', label: 'Payouts', icon: '💰' },
-          ].map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:bg-slate-800'}`}
-            >
-              <span>{item.icon}</span> {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-4 border-t border-slate-800">
-          <button onClick={() => setIsLoggedIn(false)} className="w-full text-left px-4 py-2 text-sm text-slate-500 hover:text-white transition">
-            Logout
+        
+        <div className="flex items-center gap-8">
+          <div className="hidden md:flex gap-8">
+            {['AI Systems', 'Automation', 'Chatbots'].map(item => (
+              <a key={item} href="#marketplace" className="text-[11px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors">
+                {item}
+              </a>
+            ))}
+          </div>
+          <div className="h-4 w-px bg-slate-200 hidden md:block"></div>
+          <button 
+            onClick={() => setShowCart(true)} 
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+          >
+            Selection ({cartIds.length})
           </button>
         </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8">
-        <header className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-2xl font-bold">Welcome back, Partner</h1>
-            <p className="text-slate-500 text-sm">Your SaaS is performing 24% better than last month.</p>
-          </div>
-          <div className="flex gap-4">
-            <div className="bg-slate-800 px-4 py-2 rounded-xl border border-slate-700 text-sm flex items-center gap-2">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-              Backend Status: Online
-            </div>
-            <img src="https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff" className="w-10 h-10 rounded-full border border-indigo-500" alt="Profile" />
-          </div>
-        </header>
-
-        {activeTab === 'analytics' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              {[
-                { label: 'Total Revenue', value: '₹1,42,000', change: '+12%', color: 'text-emerald-400' },
-                { label: 'Active Clients', value: '48', change: '+3', color: 'text-indigo-400' },
-                { label: 'AI Responses', value: records.length.toString(), change: '+New', color: 'text-purple-400' },
-                { label: 'DB Storage', value: `${(JSON.stringify(records).length / 1024).toFixed(2)} KB`, change: 'Optimal', color: 'text-amber-400' },
-              ].map((stat, i) => (
-                <div key={i} className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700/50">
-                  <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">{stat.label}</p>
-                  <p className="text-2xl font-bold">{stat.value}</p>
-                  <p className={`text-[10px] mt-2 font-bold ${stat.color}`}>{stat.change} since last week</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-700/50 h-64 flex items-center justify-center relative overflow-hidden">
-               <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent"></div>
-               <p className="text-slate-500 font-medium">Real-time Interaction Stream Visualization</p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'database' && (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex justify-between items-end">
-              <div>
-                <h2 className="text-xl font-bold">Database Management</h2>
-                <p className="text-sm text-slate-500">View and manage all records generated by your AI suite.</p>
-              </div>
-              <button 
-                onClick={() => { db.clearAll(); setRecords([]); }}
-                className="text-xs font-bold text-red-500 hover:bg-red-500/10 px-4 py-2 rounded-lg transition"
-              >
-                Wipe Database
-              </button>
-            </div>
-
-            <div className="bg-slate-800/50 rounded-3xl border border-slate-700/50 overflow-hidden">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="bg-slate-900/50 border-b border-slate-700 text-slate-500">
-                    <th className="px-6 py-4 font-bold uppercase text-[10px]">Type</th>
-                    <th className="px-6 py-4 font-bold uppercase text-[10px]">Input Prompt</th>
-                    <th className="px-6 py-4 font-bold uppercase text-[10px]">Timestamp</th>
-                    <th className="px-6 py-4 font-bold uppercase text-[10px] text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {records.length > 0 ? records.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-700/20 transition">
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-                          r.type === 'chat' ? 'bg-indigo-500/20 text-indigo-400' :
-                          r.type === 'image' ? 'bg-emerald-500/20 text-emerald-400' :
-                          r.type === 'voice' ? 'bg-purple-500/20 text-purple-400' :
-                          'bg-slate-500/20 text-slate-400'
-                        }`}>
-                          {r.type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 max-w-xs truncate text-slate-300 italic">"{r.input}"</td>
-                      <td className="px-6 py-4 text-slate-500 text-xs">
-                        {new Date(r.timestamp).toLocaleTimeString()}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => handleDeleteRecord(r.id)}
-                          className="text-slate-500 hover:text-red-400 transition"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-20 text-center text-slate-500 italic">No records found. Try using the demos on the landing page!</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="max-w-2xl space-y-8 animate-in fade-in duration-500">
-            <section className="bg-slate-800/50 p-8 rounded-3xl border border-slate-700/50 space-y-6">
-              <h2 className="text-xl font-bold">White-Label Configuration</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Platform Name</label>
-                  <input type="text" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm" defaultValue="My Custom AI" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Custom Domain</label>
-                  <input type="text" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm" placeholder="app.yourbrand.com" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Logo Upload</label>
-                  <div className="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500 hover:border-indigo-500 transition cursor-pointer">
-                    Click to upload PNG or SVG (Transparent recommended)
-                  </div>
-                </div>
-                <button className="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl font-bold transition">Save Branded Settings</button>
-              </div>
-            </section>
-          </div>
-        )}
-        
-        {(activeTab === 'agents' || activeTab === 'billing') && (
-           <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
-             <span className="text-6xl mb-4">🏗️</span>
-             <h3 className="text-xl font-bold">Feature Under Construction</h3>
-             <p className="text-sm">This module is available in the full production version.</p>
-           </div>
-        )}
-      </main>
-    </div>
+      </div>
+    </nav>
   );
 
-  const LoginModal = () => (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-8 space-y-6">
-          <div className="text-center space-y-2">
-            <h2 className="text-3xl font-black">Partner Login</h2>
-            <p className="text-slate-400 text-sm">Enter your credentials to manage your AI SaaS</p>
+  const Hero = () => (
+    <section className="relative pt-48 pb-32 overflow-hidden bg-white">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-slate-50 rounded-[100%] blur-[120px] opacity-60 -z-10"></div>
+      <div className="container-custom text-center max-w-4xl">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-50 border border-slate-100 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+          New: Veo 3.1 Fast Video Intelligence Now Live
+        </div>
+        <h1 className="text-5xl md:text-7xl font-black tracking-tight text-slate-900 leading-[1.05] mb-8 animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-100">
+          The Global <span className="text-gradient">Acquisition Engine</span> For Modern Startups.
+        </h1>
+        <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto mb-12 leading-relaxed font-normal animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200">
+          Acquire world-class AI systems, automated workflows, and branded SaaS components. Launch under your brand in 48 hours. Secure 50% profit share on every resale.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-300">
+          <a href="#lab" className="px-10 py-5 bg-slate-900 text-white rounded-xl font-bold uppercase tracking-widest text-[11px] hover:scale-[1.02] transition-transform shadow-2xl shadow-slate-300">
+            Open Innovation Lab
+          </a>
+          <a href="#marketplace" className="px-10 py-5 bg-white text-slate-900 border border-slate-200 rounded-xl font-bold uppercase tracking-widest text-[11px] hover:bg-slate-50 transition-colors">
+            View Marketplace
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+
+  const ProductGrid = () => (
+    <section id="marketplace" className="py-32 bg-slate-50">
+      <div className="container-custom">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
+          <div className="space-y-4">
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">Proprietary Solutions</h2>
+            <p className="text-slate-500 uppercase tracking-widest text-[11px] font-bold">Standardized Excellence • 48H Fast-Track Deployment</p>
           </div>
-          <form className="space-y-4" onSubmit={handleLogin}>
-            <div className="space-y-1">
-              <label className="text-xs font-bold uppercase text-slate-500 ml-1">Work Email</label>
-              <input 
-                type="email" 
-                required 
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm focus:border-indigo-500 outline-none transition" 
-                placeholder="name@company.com"
-                defaultValue="demo@whitelabelstartup.store"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold uppercase text-slate-500 ml-1">Password</label>
-              <input 
-                type="password" 
-                required 
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm focus:border-indigo-500 outline-none transition" 
-                placeholder="••••••••"
-                defaultValue="password123"
-              />
-            </div>
+          
+          <div className="flex items-center gap-2 p-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar max-w-full">
             <button 
-              type="submit" 
-              className="w-full bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+              onClick={() => setActiveCategory('All')}
+              className={`px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeCategory === 'All' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-900'}`}
             >
-              Enter Dashboard
+              All
             </button>
-          </form>
-          <div className="text-center">
-            <button onClick={() => setShowLoginModal(false)} className="text-sm text-slate-500 hover:text-white transition">Back to Home</button>
+            {Object.values(Category).map(cat => (
+              <button 
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all min-w-max ${activeCategory === cat ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-900'}`}
+              >
+                {cat}
+              </button>
+            ))}
           </div>
         </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {filteredProducts.map((product, idx) => (
+            <div 
+              key={product.id} 
+              className="group bg-white border border-slate-200 rounded-2xl overflow-hidden luxury-shadow luxury-shadow-hover transition-all duration-500 animate-in fade-in slide-in-from-bottom-10"
+              style={{ animationDelay: `${idx * 50}ms` }}
+            >
+              <div 
+                className="aspect-[16/10] relative overflow-hidden cursor-pointer"
+                onClick={() => { setSelectedProduct(product); setView('product'); window.scrollTo(0,0); }}
+              >
+                <img src={product.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 grayscale group-hover:grayscale-0" alt={product.name} />
+                <div className="absolute top-4 left-4">
+                  <span className="px-3 py-1 bg-white/90 backdrop-blur-md rounded-full text-[9px] font-black uppercase tracking-widest text-slate-900 border border-slate-100 shadow-sm">{product.category}</span>
+                </div>
+              </div>
+              
+              <div className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold text-slate-900 group-hover:text-slate-700 transition-colors">{product.name}</h3>
+                  <p className="text-slate-500 text-xs leading-relaxed line-clamp-2 h-8">{product.description}</p>
+                </div>
+                
+                <div className="flex items-center justify-between pt-6 border-t border-slate-100">
+                  <div>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Licensing Fee</span>
+                    <span className="text-xl font-bold text-slate-900">₹{product.price.toLocaleString()}</span>
+                  </div>
+                  <button 
+                    onClick={() => addToCart(product.id)}
+                    className="px-6 py-3 bg-slate-50 text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all border border-slate-100"
+                  >
+                    {cartIds.includes(product.id) ? 'Selected' : 'Acquire'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </section>
   );
 
-  const PricingCard = ({ title, price, features, highlighted = false }: { title: string, price: string, features: string[], highlighted?: boolean }) => (
-    <div className={`relative flex flex-col p-8 rounded-3xl border ${highlighted ? 'bg-indigo-900/20 border-indigo-500 scale-105 shadow-2xl shadow-indigo-500/20' : 'bg-slate-800/40 border-slate-700'} transition-all hover:translate-y-[-8px]`}>
-      {highlighted && (
-        <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-wider">Most Popular</span>
-      )}
-      <h3 className="text-xl font-bold mb-2">{title}</h3>
-      <div className="flex items-baseline mb-6">
-        <span className="text-4xl font-extrabold">{price}</span>
-        <span className="text-slate-400 ml-2">One-time</span>
+  const InnovationLabSection = () => (
+    <section id="lab" className="py-32 bg-white">
+      <div className="container-custom">
+        <div className="max-w-3xl mx-auto text-center mb-20 space-y-4">
+          <h2 className="text-4xl font-black tracking-tight text-slate-900">Innovation Lab <span className="text-slate-300">3.0</span></h2>
+          <p className="text-slate-500 uppercase tracking-widest text-[11px] font-bold">Try the tech before acquisition • Powered by Google Gemini & Veo</p>
+        </div>
+        <div className="max-w-5xl mx-auto">
+          <InteractiveDemos />
+        </div>
       </div>
-      <ul className="space-y-4 mb-8 flex-1">
-        {features.map((f, i) => (
-          <li key={i} className="flex items-start text-sm text-slate-300">
-            <svg className="w-5 h-5 text-emerald-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-            {f}
-          </li>
-        ))}
-      </ul>
-      <a href="#pricing" className={`w-full py-4 rounded-xl font-bold text-center transition-all ${highlighted ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg' : 'bg-slate-700 hover:bg-slate-600 text-slate-100'}`}>
-        Secure Your Spot
-      </a>
-    </div>
+    </section>
   );
 
-  if (isLoggedIn) return <Dashboard />;
-
-  return (
-    <div className="min-h-screen bg-[#0f172a]">
-      {showLoginModal && <LoginModal />}
-      
-      {/* Hero Section */}
-      <section className="relative min-h-screen flex flex-col justify-center items-center px-6 overflow-hidden bg-dark-gradient">
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
-          <div className="absolute top-1/4 -right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px]"></div>
-          <div className="absolute bottom-1/4 -left-20 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px]"></div>
+  const Cart = () => (
+    <div className={`fixed inset-0 z-[200] flex justify-end transition-all duration-700 ${showCart ? 'visible' : 'invisible pointer-events-none'}`}>
+      <div className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-700 ${showCart ? 'opacity-100' : 'opacity-0'}`} onClick={() => setShowCart(false)}></div>
+      <div className={`w-full max-w-lg bg-white h-full shadow-2xl p-12 flex flex-col transition-transform duration-700 ${showCart ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex justify-between items-center mb-16">
+          <h2 className="text-2xl font-black uppercase tracking-tighter text-slate-900">Brand Portfolio</h2>
+          <button onClick={() => setShowCart(false)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-50 text-slate-400 hover:text-slate-900 transition-all text-xl">✕</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar">
+          {cartItems.map(item => (
+            <div key={item.id} className="flex gap-6 items-center p-4 rounded-2xl border border-slate-100 group">
+              <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0">
+                <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" alt={item.name} />
+              </div>
+              <div className="flex-1 space-y-1">
+                <h4 className="font-bold text-xs uppercase tracking-widest text-slate-900">{item.name}</h4>
+                <p className="text-slate-900 font-bold">₹{item.price.toLocaleString()}</p>
+                <button onClick={() => removeFromCart(item.id)} className="text-[9px] text-red-500 font-bold uppercase tracking-widest hover:underline transition-all">Remove</button>
+              </div>
+            </div>
+          ))}
+          {cartItems.length === 0 && (
+            <div className="text-center py-40 space-y-6">
+              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
+                <span className="text-2xl">💼</span>
+              </div>
+              <p className="text-slate-400 font-medium italic text-sm">Your portfolio selection is currently empty.</p>
+            </div>
+          )}
         </div>
 
-        <nav className="absolute top-0 w-full max-w-7xl mx-auto flex justify-between items-center py-6 px-6">
-          <div className="text-2xl font-black tracking-tighter text-indigo-400">WLS<span className="text-white">.STORE</span></div>
-          <div className="hidden md:flex gap-8 text-sm font-medium text-slate-400">
-            <a href="#features" className="hover:text-white transition">Features</a>
-            <a href="#demos" className="hover:text-white transition">Live Demos</a>
-            <a href="#pricing" className="hover:text-white transition">Pricing</a>
+        <div className="pt-12 space-y-8 border-t border-slate-100 mt-auto">
+          <div className="flex justify-between items-baseline px-2">
+            <span className="text-slate-400 uppercase tracking-widest text-[10px] font-black">Total Acquisition Cost</span>
+            <span className="text-4xl font-black tracking-tight text-slate-900">₹{cartTotal.toLocaleString()}</span>
           </div>
           <button 
-            onClick={() => setShowLoginModal(true)} 
-            className="bg-white/10 hover:bg-white/20 px-6 py-2 rounded-full text-sm font-bold border border-white/10 transition"
+            disabled={cartItems.length === 0}
+            onClick={() => {
+              const msg = encodeURIComponent(`I'm ready to acquire:\n${cartItems.map(i => `- ${i.name}`).join('\n')}\nTotal: ₹${cartTotal.toLocaleString()}`);
+              window.open(`https://wa.me/917009899194?text=${msg}`);
+            }}
+            className="w-full bg-slate-900 text-white py-6 rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl hover:scale-[1.02] transition-transform disabled:opacity-30"
           >
-            Login
+            Confirm Licensing via WhatsApp
           </button>
-        </nav>
-
-        <div className="max-w-4xl text-center z-10 space-y-8">
-          <div className="inline-block bg-indigo-500/20 border border-indigo-500/30 px-4 py-1.5 rounded-full text-indigo-400 text-xs font-bold uppercase tracking-widest mb-4">
-            Limited Time: Founder's Launch Offer 🇮🇳
-          </div>
-          <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.1]">
-            Launch YOUR Branded <br/> 
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-emerald-400">AI SaaS in 24 Hours</span>
-          </h1>
-          <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto font-medium">
-            White-label chatbot + CRM/automation. Charge clients ₹3,000/mo. <br className="hidden md:block" /> 
-            10 clients = ₹30k/mo MRR. No coding. Full Branding.
-          </p>
-          
-          <div className="flex flex-col md:flex-row gap-4 justify-center items-center pt-4">
-            <a href="#pricing" className="w-full md:w-auto px-10 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-lg font-bold shadow-2xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95">
-              Claim Launch Spot (₹9,999)
-            </a>
-            <p className="text-slate-500 text-sm font-medium flex items-center gap-2">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              Only 50 spots available for Dec 2025
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-10">
-            {["Your logo & domain", "Unlimited client accounts", "Instamojo/Razorpay ready"].map((benefit, i) => (
-              <div key={i} className="flex items-center justify-center gap-2 text-slate-300 font-medium">
-                <svg className="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path></svg>
-                {benefit}
-              </div>
-            ))}
-          </div>
+          <p className="text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setup commences within 48 hours of confirmation.</p>
         </div>
-      </section>
-
-      {/* Social Proof */}
-      <section className="bg-slate-900/50 py-12 border-y border-slate-800">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-wrap justify-center gap-12 md:gap-24 opacity-40 grayscale filter">
-            {/* Logos Placeholder */}
-            {['GoHighLevel', 'CustomGPT', 'OpenAI', 'Razorpay', 'Meta'].map(l => (
-              <span key={l} className="text-2xl font-black text-slate-100 italic">{l}</span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Problem Section */}
-      <section id="features" className="py-24 px-6 max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-2 gap-16 items-center">
-          <div className="space-y-6">
-            <h2 className="text-4xl md:text-5xl font-black">Traditional SaaS is hard. <br/> <span className="text-indigo-500">We make it simple.</span></h2>
-            <div className="space-y-8">
-              <div className="flex gap-4 p-6 bg-red-500/5 border border-red-500/20 rounded-2xl">
-                <div className="w-12 h-12 bg-red-500/20 flex items-center justify-center rounded-xl text-2xl">🛑</div>
-                <div>
-                  <h4 className="font-bold text-red-400">Building = 6 months + ₹10L</h4>
-                  <p className="text-sm text-slate-400">Finding developers, debugging, and hosting kills your dream before it starts.</p>
-                </div>
-              </div>
-              <div className="flex gap-4 p-6 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl">
-                <div className="w-12 h-12 bg-emerald-500/20 flex items-center justify-center rounded-xl text-2xl">🚀</div>
-                <div>
-                  <h4 className="font-bold text-emerald-400">Launch in 24 Hours</h4>
-                  <p className="text-sm text-slate-400">Our pre-built engine gives you a fully functional platform you can call your own tonight.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="relative">
-            <div className="aspect-video bg-indigo-500/10 rounded-3xl border border-indigo-500/20 overflow-hidden shadow-2xl">
-              <img src="https://picsum.photos/seed/dashboard/800/450" alt="Dashboard Preview" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent"></div>
-              <div className="absolute bottom-6 left-6">
-                <p className="text-white font-bold text-lg">Your Brand Dashboard</p>
-                <p className="text-slate-400 text-xs">Live Preview: 100% White-Labeled</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Demos Section */}
-      <div id="demos">
-        <InteractiveDemos />
       </div>
+    </div>
+  );
 
-      {/* How It Works */}
-      <section className="py-24 px-6 bg-slate-900/30">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="text-center text-4xl font-bold mb-16">Launch Plan: 3 Simple Steps</h2>
-          <div className="grid md:grid-cols-3 gap-12">
-            {[
-              { step: 1, title: "Buy & Brand", desc: "Get your unique login + branding kit instantly." },
-              { step: 2, title: "Custom Setup", desc: "Add your logo and domain in under 15 minutes." },
-              { step: 3, title: "Bill Clients", desc: "Add clients, set your price, and keep 100% profit." }
-            ].map((s, i) => (
-              <div key={i} className="text-center space-y-4">
-                <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-2xl font-black mx-auto shadow-xl">{s.step}</div>
-                <h4 className="text-xl font-bold">{s.title}</h4>
-                <p className="text-slate-400">{s.desc}</p>
-              </div>
-            ))}
+  return (
+    <div className="min-h-screen">
+      <Nav />
+      <Cart />
+      
+      {view === 'store' ? (
+        <main>
+          <Hero />
+          
+          <div className="bg-slate-900 py-4 overflow-hidden border-y border-white/10">
+            <div className="container-custom flex justify-center items-center gap-12 text-white/40 text-[9px] font-black uppercase tracking-[0.5em] animate-pulse">
+              <span>Trusted by 450+ Brands</span>
+              <span className="w-1.5 h-1.5 bg-white/20 rounded-full"></span>
+              <span>Proprietary AI Core</span>
+              <span className="w-1.5 h-1.5 bg-white/20 rounded-full"></span>
+              <span>Global Licensing Ready</span>
+            </div>
           </div>
-        </div>
-      </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="py-24 px-6 max-w-7xl mx-auto">
-        <div className="text-center mb-16 space-y-4">
-          <h2 className="text-5xl font-black">Choose Your Launch Plan</h2>
-          <p className="text-slate-400">No subscriptions. One-time payment for Founder spots.</p>
-        </div>
-        <div className="grid lg:grid-cols-3 gap-8 items-stretch">
-          <PricingCard 
-            title="Solo Creator" 
-            price="₹9,999" 
-            features={["1 Branded Domain", "10 Client Accounts", "AI Smart Chatbot", "Basic CRM", "Standard Support", "Lifetime Access"]}
-          />
-          <PricingCard 
-            highlighted 
-            title="Agency Reseller" 
-            price="₹24,999" 
-            features={["Custom Root Domain", "50 Client Accounts", "Multi-Agent AI Studio", "Full CRM Automation", "WhatsApp Bot Builder", "Priority Support"]}
-          />
-          <PricingCard 
-            title="Done-For-You" 
-            price="₹49,999" 
-            features={["Unlimited Client Accounts", "Custom UI Theme", "We Setup Everything for You", "Custom Sales Funnel", "1-on-1 Consultation", "VVIP Priority Support"]}
-          />
-        </div>
-      </section>
+          <InnovationLabSection />
+          <ProductGrid />
 
-      {/* Testimonials */}
-      <section className="py-24 px-6 max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {TESTIMONIALS.map((t, i) => (
-            <div key={i} className="p-6 bg-slate-800/40 border border-slate-700 rounded-2xl space-y-4">
-              <div className="flex text-amber-400">
-                {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>)}
-              </div>
-              <p className="text-sm italic text-slate-300">"{t.quote}"</p>
-              <div>
-                <p className="font-bold">{t.name}</p>
-                <p className="text-xs text-slate-500">{t.location}</p>
-                <p className="text-xs font-bold text-emerald-500 mt-1">{t.revenue}</p>
+          <section className="bg-slate-950 py-40 overflow-hidden relative">
+            <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+              <div className="grid grid-cols-12 h-full container-custom border-x border-white/5">
+                {[...Array(11)].map((_, i) => <div key={i} className="border-r border-white/5 h-full"></div>)}
               </div>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="py-24 px-6 max-w-3xl mx-auto">
-        <h2 className="text-3xl font-bold mb-12 text-center">Frequently Asked Questions</h2>
-        <div className="space-y-4">
-          {FAQS.map((faq, i) => (
-            <details key={i} className="group bg-slate-800/40 border border-slate-700 rounded-2xl overflow-hidden">
-              <summary className="p-6 cursor-pointer flex justify-between items-center font-bold">
-                {faq.q}
-                <span className="text-slate-500 group-open:rotate-180 transition-transform">↓</span>
-              </summary>
-              <div className="p-6 pt-0 text-slate-400 text-sm leading-relaxed border-t border-slate-700">
-                {faq.a}
+            
+            <div className="container-custom relative z-10 text-center space-y-16">
+              <div className="space-y-6">
+                <h4 className="text-slate-400 uppercase tracking-[0.6em] text-[10px] font-black">The Scarcity Protocol</h4>
+                <h2 className="text-5xl md:text-8xl text-white font-black tracking-tighter leading-none">Empire In <span className="text-gradient">48 Hours.</span></h2>
+                <div className="bg-white/5 inline-block px-8 py-4 rounded-2xl border border-white/10 mt-8">
+                  <span className="text-white text-2xl font-black tabular-nums tracking-widest">{formatTime(timeLeft)}</span>
+                  <p className="text-white/30 text-[9px] font-black uppercase tracking-[0.3em] mt-2">Next Brand Deployment Slot Available</p>
+                </div>
               </div>
-            </details>
-          ))}
-        </div>
-      </section>
+              <p className="text-white/50 text-lg uppercase tracking-[0.2em] leading-relaxed max-w-2xl mx-auto font-light">
+                Secure your master license today. Own the technology. <br/>Control the market. <span className="text-white font-bold">Keep 50% Profit on every sale.</span>
+              </p>
+              <a href="https://wa.me/917009899194" target="_blank" className="inline-block px-16 py-6 bg-white text-slate-900 rounded-xl font-black uppercase tracking-[0.4em] text-[11px] hover:scale-[1.05] transition-transform">
+                Claim License Spot
+              </a>
+            </div>
+          </section>
+        </main>
+      ) : selectedProduct && (
+        <main className="pt-48 pb-32">
+          <div className="container-custom">
+            <button onClick={() => setView('store')} className="group flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-all mb-20">
+              <span className="group-hover:-translate-x-1 transition-transform">←</span> Return to Marketplace
+            </button>
+            
+            <div className="grid lg:grid-cols-2 gap-24 items-start">
+              <div className="space-y-16">
+                <div className="space-y-8">
+                  <div className="inline-flex items-center gap-3 px-4 py-2 bg-slate-50 border border-slate-100 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-500">
+                    {selectedProduct.category}
+                  </div>
+                  <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-slate-900 leading-none">{selectedProduct.name}</h1>
+                  <p className="text-xl text-slate-500 font-normal leading-relaxed">{selectedProduct.longDescription}</p>
+                </div>
 
-      {/* Footer */}
-      <footer className="py-12 border-t border-slate-800 px-6">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-xl font-black text-indigo-400">WLS<span className="text-white">.STORE</span></div>
-          <div className="text-slate-500 text-xs text-center md:text-left">
-            © 2025 WhiteLabelStartup.store. All rights reserved. <br/>
-            Launched with pride in India 🇮🇳
+                <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl shadow-slate-200 space-y-10">
+                  <div className="flex justify-between items-end">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Licensing Cost</span>
+                      <p className="text-5xl font-black text-slate-900">₹{selectedProduct.price.toLocaleString()}</p>
+                    </div>
+                    <div className="text-right space-y-1">
+                      <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block">Deployment: 48H</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Lifetime Brand Rights</span>
+                    </div>
+                  </div>
+                  <button onClick={() => addToCart(selectedProduct.id)} className="w-full bg-slate-900 text-white py-8 rounded-2xl font-black uppercase tracking-widest text-[12px] shadow-2xl hover:bg-slate-800 transition-all">
+                    Acquire Master License
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-12">
+                <div className="bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 group">
+                  <img src={selectedProduct.image} className="w-full aspect-[4/5] object-cover grayscale transition-all duration-700 group-hover:grayscale-0" alt={selectedProduct.name} />
+                </div>
+                {selectedProduct.demoType && (
+                  <div className="glass p-12 rounded-3xl border border-slate-200 shadow-xl space-y-8">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-black uppercase tracking-widest text-slate-900">Interactive Demo</h3>
+                      <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                    </div>
+                    <InteractiveDemos initialView={selectedProduct.demoType} />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex gap-4">
-            <a href="#" className="text-slate-500 hover:text-white transition">Terms</a>
-            <a href="#" className="text-slate-500 hover:text-white transition">Privacy</a>
+        </main>
+      )}
+
+      <footer className="bg-white border-t border-slate-100 py-32">
+        <div className="container-custom text-center space-y-16">
+          <div className="text-xl font-black tracking-tighter uppercase text-slate-900 flex items-center justify-center gap-3">
+             <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-xs">O</div>
+             Online Startup Store
+          </div>
+          <div className="flex flex-wrap justify-center gap-x-16 gap-y-8 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+             {['Licensing', 'Consultancy', 'Legal', 'Infrastructure', 'Support'].map(item => (
+               <a key={item} href="#" className="hover:text-slate-900 transition-colors">{item}</a>
+             ))}
+          </div>
+          <div className="space-y-4 pt-16 border-t border-slate-50">
+            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-[0.4em]">© 2025 Online Startup Store • All Proprietary Rights Reserved</p>
+            <p className="text-[9px] font-medium text-slate-400 max-w-xl mx-auto leading-relaxed">The Online Startup Store is a master licensing gateway. All deployments are under white-label terms. Profit participation is legally bound to resale performance.</p>
           </div>
         </div>
       </footer>
-
-      {/* Sticky Bottom Bar */}
-      <div className="fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-md border-t border-slate-700 py-3 px-6 z-50 flex items-center justify-between shadow-2xl">
-        <div className="hidden md:flex flex-col">
-          <p className="text-xs font-bold text-indigo-400 uppercase tracking-tighter">Founder Spots Left: 14/50</p>
-          <div className="flex gap-2 text-sm font-mono text-slate-100">
-            <span>{timeLeft.hours.toString().padStart(2, '0')}h</span>
-            <span>{timeLeft.minutes.toString().padStart(2, '0')}m</span>
-            <span>{timeLeft.seconds.toString().padStart(2, '0')}s</span>
-          </div>
-        </div>
-        <a href="#pricing" className="flex-1 md:flex-none text-center bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3 rounded-xl shadow-lg transition-transform active:scale-95 text-sm md:text-base">
-          Secure Founder Launch Price (₹9,999) →
-        </a>
-      </div>
     </div>
   );
 };
